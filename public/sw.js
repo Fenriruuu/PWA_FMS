@@ -2,59 +2,42 @@ importScripts(
     'https://storage.googleapis.com/workbox-cdn/releases/6.5.4/workbox-sw.js'
 );
 
-// Initialize deferredPrompt for use later to show browser install prompt.
-let deferredPrompt;
+const CACHE_NAME = 'cool-cache';
 
-window.addEventListener('beforeinstallprompt', (e) => {
-  // Prevent the mini-infobar from appearing on mobile
-  e.preventDefault();
-  // Stash the event so it can be triggered later.
-  deferredPrompt = e;
-  // Update UI notify the user they can install the PWA
-  showInstallPromotion();
-  // Optionally, send analytics event that PWA install promo was shown.
-  console.log(`'beforeinstallprompt' event was fired.`);
+// Add whichever assets you want to precache here:
+const PRECACHE_ASSETS = [
+    '/assets/',
+    '/src/'
+]
+
+// Listener for the install event - precaches our assets list on service worker install.
+self.addEventListener('install', event => {
+    event.waitUntil((async () => {
+        const cache = await caches.open(CACHE_NAME);
+        cache.addAll(PRECACHE_ASSETS);
+    })());
 });
 
-buttonInstall.addEventListener('click', async () => {
-    // Hide the app provided install promotion
-    hideInstallPromotion();
-    // Show the install prompt
-    deferredPrompt.prompt();
-    // Wait for the user to respond to the prompt
-    const { outcome } = await deferredPrompt.userChoice;
-    // Optionally, send analytics event with outcome of user choice
-    console.log(`User response to the install prompt: ${outcome}`);
-    // We've used the prompt, and can't use it again, throw it away
-    deferredPrompt = null;
+self.addEventListener('activate', event => {
+    event.waitUntil(clients.claim());
 });
 
-window.addEventListener('appinstalled', () => {
-    // Hide the app-provided install promotion
-    hideInstallPromotion();
-    // Clear the deferredPrompt so it can be garbage collected
-    deferredPrompt = null;
-    // Optionally, send analytics event to indicate successful install
-    console.log('PWA was installed');
-});
+self.addEventListener('fetch', event => {
+    event.respondWith(async () => {
+        const cache = await caches.open(CACHE_NAME);
 
-function getPWADisplayMode() {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    if (document.referrer.startsWith('android-app://')) {
-      return 'twa';
-    } else if (navigator.standalone || isStandalone) {
-      return 'standalone';
-    }
-    return 'browser';
-}
+        // match the request to our cache
+        const cachedResponse = await cache.match(event.request);
 
-window.matchMedia('(display-mode: standalone)').addEventListener('change', (evt) => {
-    let displayMode = 'browser';
-    if (evt.matches) {
-      displayMode = 'standalone';
-    }
-    // Log display mode change to analytics
-    console.log('DISPLAY_MODE_CHANGED', displayMode);
+        // check if we got a valid response
+        if (cachedResponse !== undefined) {
+            // Cache hit, return the resource
+            return cachedResponse;
+        } else {
+            // Otherwise, go to the network
+            return fetch(event.request)
+        };
+    });
 });
 
 workbox.precaching.precacheAndRoute(self.__WB_MANIFEST || []);
