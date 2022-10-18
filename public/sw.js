@@ -2,51 +2,59 @@ importScripts(
     'https://storage.googleapis.com/workbox-cdn/releases/6.5.4/workbox-sw.js'
 );
 
-// This is your Service Worker, you can put any of your custom Service Worker
-// code in this file, above the `precacheAndRoute` line.
+// Initialize deferredPrompt for use later to show browser install prompt.
+let deferredPrompt;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Prevent the mini-infobar from appearing on mobile
+  e.preventDefault();
+  // Stash the event so it can be triggered later.
+  deferredPrompt = e;
+  // Update UI notify the user they can install the PWA
+  showInstallPromotion();
+  // Optionally, send analytics event that PWA install promo was shown.
+  console.log(`'beforeinstallprompt' event was fired.`);
+});
+
+buttonInstall.addEventListener('click', async () => {
+    // Hide the app provided install promotion
+    hideInstallPromotion();
+    // Show the install prompt
+    deferredPrompt.prompt();
+    // Wait for the user to respond to the prompt
+    const { outcome } = await deferredPrompt.userChoice;
+    // Optionally, send analytics event with outcome of user choice
+    console.log(`User response to the install prompt: ${outcome}`);
+    // We've used the prompt, and can't use it again, throw it away
+    deferredPrompt = null;
+});
+
+window.addEventListener('appinstalled', () => {
+    // Hide the app-provided install promotion
+    hideInstallPromotion();
+    // Clear the deferredPrompt so it can be garbage collected
+    deferredPrompt = null;
+    // Optionally, send analytics event to indicate successful install
+    console.log('PWA was installed');
+});
+
+function getPWADisplayMode() {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    if (document.referrer.startsWith('android-app://')) {
+      return 'twa';
+    } else if (navigator.standalone || isStandalone) {
+      return 'standalone';
+    }
+    return 'browser';
+}
+
+window.matchMedia('(display-mode: standalone)').addEventListener('change', (evt) => {
+    let displayMode = 'browser';
+    if (evt.matches) {
+      displayMode = 'standalone';
+    }
+    // Log display mode change to analytics
+    console.log('DISPLAY_MODE_CHANGED', displayMode);
+});
 
 workbox.precaching.precacheAndRoute(self.__WB_MANIFEST || []);
-
-// This is the code that will be executed when the Service Worker starts up.
-// It will add the `offline` class to the body tag, so you can style your
-// offline page to look different to your online page.
-self.addEventListener('install', (event) => {
-    self.skipWaiting();
-    event.waitUntil(
-        (async () => {
-            const cache = await caches.open('offline');
-            await cache.addAll(['/offline.html']);
-        })()
-    );
-});
-
-// This is the code that will be executed when the Service Worker requests
-// a resource. It will check if the resource is in the cache, and if not,
-// it will return the offline page.
-self.addEventListener('fetch', (event) => {
-    event.respondWith(
-        (async () => {
-            try {
-                return await fetch(event.request);
-            } catch (error) {
-                const cache = await caches.open('offline');
-                const cachedResponse = await cache.match('/offline.html');
-                return cachedResponse;
-            }
-        })()
-    );
-});
-
-// This is the code that will be executed when the Service Worker stops
-// running. It will remove the `offline` class from the body tag, so you
-// can style your offline page to look different to your online page.
-self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        (async () => {
-            if ('navigationPreload' in self.registration) {
-                await self.registration.navigationPreload.enable();
-            }
-        })()
-    );
-    self.clients.claim();
-});
