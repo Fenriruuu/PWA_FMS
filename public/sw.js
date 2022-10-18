@@ -49,4 +49,4 @@ self.addEventListener('activate', (event) => {
         })()
     );
     self.clients.claim();
-}
+});
